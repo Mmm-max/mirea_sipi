@@ -1,0 +1,42 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: sipi-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sipi
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sipi"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sipi-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_PORT: "8080"
+      POSTGRES_DSN: "host=postgres user=postgres password=postgres dbname=sipi port=5432 sslmode=disable TimeZone=UTC"
+      JWT_SECRET: "change-me-super-secret"
+      JWT_ACCESS_TTL_MINUTES: "15"
+      JWT_REFRESH_TTL_HOURS: "720"
+    ports:
+      - "8080:8080"
+
+volumes:
+  postgres_data:

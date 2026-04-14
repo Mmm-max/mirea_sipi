@@ -1,0 +1,11 @@
+.env
+.idea/
+.vscode/
+.DS_Store
+build/*
+!build/.gitkeep
+docs/swagger.json
+docs/swagger.yaml
+vendor/
+CLAUDE.md
+agent/
