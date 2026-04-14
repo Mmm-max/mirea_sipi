@@ -9,3 +9,4 @@ docs/swagger.yaml
 vendor/
 CLAUDE.md
 agent/
+.claude/
