@@ -29,6 +29,10 @@ func NewService(repository RepositoryPort, userDirectory UserDirectoryPort, reso
 	}
 }
 
+// CreateMeeting создаёт новую встречу и автоматически добавляет организатора
+// как принятого участника (InvitationStatusAccepted).
+// Статус встречи определяется автоматически: если выбрано время — Scheduled,
+// иначе — Draft.
 func (s *Service) CreateMeeting(ctx context.Context, command CreateMeetingCommand) (*Meeting, error) {
 	meeting := &Meeting{
 		ID:                uuid.New(),
@@ -130,6 +134,11 @@ func (s *Service) DeleteMeeting(ctx context.Context, meetingID, organizerUserID 
 	return nil
 }
 
+// AddParticipants добавляет новых участников к встрече.
+// Организатор всегда является участником — повторное добавление игнорируется.
+// Существующие участники пропускаются без ошибки.
+// После добавления рассылаются уведомления через NotificationPort.
+// Вызывать может только организатор встречи.
 func (s *Service) AddParticipants(ctx context.Context, command AddParticipantsCommand) (*Meeting, error) {
 	meeting, err := s.requireOrganizerMeeting(ctx, command.MeetingID, command.OrganizerUserID)
 	if err != nil {
@@ -260,6 +269,9 @@ func (s *Service) RemoveResource(ctx context.Context, command RemoveResourceComm
 	return nil
 }
 
+// RespondInvitation позволяет участнику ответить на приглашение на встречу
+// (accepted, declined, tentative, pending).
+// При ответе сбрасываются ранее предложенные альтернативные временны́е слоты.
 func (s *Service) RespondInvitation(ctx context.Context, command RespondInvitationCommand) (*MeetingParticipant, error) {
 	participant, meeting, err := s.requireMeetingParticipant(ctx, command.MeetingID, command.UserID)
 	if err != nil {

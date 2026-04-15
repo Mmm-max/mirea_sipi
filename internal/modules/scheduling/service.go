@@ -26,6 +26,8 @@ type Service struct {
 	notifications NotificationPort
 }
 
+// NewService создаёт новый экземпляр сервиса планирования.
+// Если notifications равен nil, используется заглушка (noop).
 func NewService(repository RepositoryPort, meetings MeetingStorePort, availability AvailabilityStorePort, eventSync EventSyncPort, notifications NotificationPort) *Service {
 	if notifications == nil {
 		notifications = NewNoopNotificationHook()
@@ -39,6 +41,12 @@ func NewService(repository RepositoryPort, meetings MeetingStorePort, availabili
 	}
 }
 
+// SearchSlots выполняет поиск доступных временных слотов для встречи.
+// Перебирает кандидатные временны́е окна с шагом 15 минут в пределах
+// SearchRangeStart..SearchRangeEnd, оценивает каждое окно через evaluateSlot,
+// сортирует по убыванию Score и возвращает топ-N слотов (по умолчанию 10).
+// Результаты сохраняются в БД и перезаписывают предыдущие слоты встречи.
+// Вызывать может только организатор встречи.
 func (s *Service) SearchSlots(ctx context.Context, command SearchSlotsCommand) (*SearchResult, error) {
 	meeting, err := s.meetings.GetMeeting(ctx, command.MeetingID)
 	if err != nil {
@@ -105,6 +113,11 @@ func (s *Service) GetSlots(ctx context.Context, query GetSlotsQuery) (*SearchRes
 	return &SearchResult{MeetingID: query.MeetingID, Slots: slots}, nil
 }
 
+// SelectSlot подтверждает выбор временного слота для встречи.
+// Запрещает выбор слота, имеющего жёсткие конфликты (hard conflicts).
+// После выбора обновляет время встречи, синхронизирует события участников
+// через EventSyncPort и рассылает уведомления через NotificationPort.
+// Вызывать может только организатор встречи.
 func (s *Service) SelectSlot(ctx context.Context, command SelectSlotCommand) (*MeetingAggregate, error) {
 	meeting, err := s.meetings.GetMeeting(ctx, command.MeetingID)
 	if err != nil {
@@ -141,6 +154,11 @@ func (s *Service) SelectSlot(ctx context.Context, command SelectSlotCommand) (*M
 	return s.meetings.GetMeeting(ctx, meeting.ID)
 }
 
+// evaluateSlot оценивает кандидатный временной интервал [startAt, endAt].
+// Начальная оценка — 100 баллов. За каждый мягкий конфликт (событие с
+// приоритетом low/medium/high) штраф вычитается из счёта. Жёсткие конфликты
+// (критические события, недоступность ресурсов, выход за рабочие часы)
+// обнуляют счёт. Возвращает MeetingSlot с заполненным списком конфликтов.
 func (s *Service) evaluateSlot(ctx context.Context, meeting *MeetingAggregate, startAt, endAt time.Time) MeetingSlot {
 	slot := MeetingSlot{
 		ID:        uuid.New(),
@@ -279,6 +297,10 @@ func withinMeetingDailyBounds(meeting *MeetingAggregate, startAt, endAt time.Tim
 	return true
 }
 
+// withinWorkingHours проверяет, попадает ли интервал [startAt, endAt]
+// в рабочие часы пользователя для соответствующего дня недели.
+// Если рабочие часы не заданы, интервал считается допустимым.
+// Если день помечен как нерабочий (IsWorkingDay == false), возвращает false.
 func withinWorkingHours(items []WorkingHoursWindow, startAt, endAt time.Time) bool {
 	if len(items) == 0 {
 		return true
@@ -308,6 +330,8 @@ func withinWorkingHours(items []WorkingHoursWindow, startAt, endAt time.Time) bo
 	return false
 }
 
+// overlaps возвращает true, если интервалы [aStart, aEnd) и [bStart, bEnd)
+// пересекаются (используется полуоткрытый интервал).
 func overlaps(aStart, aEnd, bStart, bEnd time.Time) bool {
 	return aStart.Before(bEnd) && aEnd.After(bStart)
 }

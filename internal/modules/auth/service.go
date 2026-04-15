@@ -21,6 +21,10 @@ func NewService(repository RepositoryPort, tokenManager TokenManager) *Service {
 	}
 }
 
+// Register регистрирует нового пользователя.
+// Email нормализуется (trim + lowercase). Пароль хешируется алгоритмом Argon2id.
+// При успехе создаётся пара токенов (access + refresh) и сессия в БД.
+// Возвращает ошибку ErrCodeEmailAlreadyExists, если email уже занят.
 func (s *Service) Register(ctx context.Context, command RegisterCommand, meta SessionMeta) (*AuthResult, error) {
 	email := normalizeEmail(command.Email)
 
@@ -72,6 +76,11 @@ func (s *Service) Login(ctx context.Context, command LoginCommand, meta SessionM
 	return s.issueTokenPair(ctx, user, meta)
 }
 
+// Refresh обновляет пару токенов по refresh-токену.
+// Реализует защиту от повторного использования (refresh token rotation):
+// если токен уже отозван — все сессии пользователя немедленно аннулируются.
+// Операция выполняется в транзакции: старая сессия отзывается,
+// новая пара токенов создаётся атомарно.
 func (s *Service) Refresh(ctx context.Context, command RefreshCommand, meta SessionMeta) (*AuthResult, error) {
 	claims, err := s.tokenManager.Parse(command.RefreshToken)
 	if err != nil || claims.Type != "refresh" {
